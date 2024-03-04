@@ -17,7 +17,7 @@ from django.db.models.signals import post_save, pre_save
 from fernet_fields import EncryptedCharField
 from sortedm2m.fields import SortedManyToManyField
 
-from judge.models.choices import ACE_THEMES, MATH_ENGINES_CHOICES, TIMEZONE
+from judge.models.choices import ACE_THEMES, TIMEZONE
 from judge.models.runtime import Language
 from judge.ratings import rating_class
 from judge.caching import cache_wrapper
@@ -215,13 +215,6 @@ class Profile(models.Model):
         related_name="+",
         on_delete=models.SET_NULL,
     )
-    math_engine = models.CharField(
-        verbose_name=_("math engine"),
-        choices=MATH_ENGINES_CHOICES,
-        max_length=4,
-        default=settings.MATHOID_DEFAULT_TYPE,
-        help_text=_("the rendering engine used to render math"),
-    )
     is_totp_enabled = models.BooleanField(
         verbose_name=_("2FA enabled"),
         default=False,
@@ -253,24 +246,9 @@ class Profile(models.Model):
         max_length=300,
     )
 
-    @cache_wrapper(prefix="Pgbi2")
-    def _get_basic_info(self):
-        res = {
-            "email": self.user.email,
-            "username": self.user.username,
-            "mute": self.mute,
-        }
-        if self.user.first_name:
-            res["first_name"] = self.user.first_name
-        if self.user.last_name:
-            res["last_name"] = self.user.last_name
-        if self.profile_image:
-            res["profile_image_url"] = self.profile_image.url
-        return res
-
     @cached_property
     def _cached_info(self):
-        return self._get_basic_info()
+        return _get_basic_info(self.id)
 
     @cached_property
     def organization(self):
@@ -412,6 +390,10 @@ class Profile(models.Model):
             or self.user.is_superuser
         )
 
+    @classmethod
+    def prefetch_profile_cache(self, profile_ids):
+        _get_basic_info.prefetch_multi([(pid,) for pid in profile_ids])
+
     class Meta:
         indexes = [
             models.Index(fields=["is_unlisted", "performance_points"]),
@@ -540,7 +522,7 @@ class OrganizationProfile(models.Model):
 def on_user_save(sender, instance, **kwargs):
     try:
         profile = instance.profile
-        profile._get_basic_info.dirty(profile)
+        _get_basic_info.dirty(profile.id)
     except:
         pass
 
@@ -551,4 +533,34 @@ def on_profile_save(sender, instance, **kwargs):
         return
     prev = sender.objects.get(id=instance.id)
     if prev.mute != instance.mute or prev.profile_image != instance.profile_image:
-        instance._get_basic_info.dirty(instance)
+        _get_basic_info.dirty(instance.id)
+
+
+@cache_wrapper(prefix="Pgbi2")
+def _get_basic_info(profile_id):
+    profile = (
+        Profile.objects.select_related("user")
+        .only(
+            "id",
+            "mute",
+            "profile_image",
+            "user__username",
+            "user__email",
+            "user__first_name",
+            "user__last_name",
+        )
+        .get(id=profile_id)
+    )
+    user = profile.user
+    res = {
+        "email": user.email,
+        "username": user.username,
+        "mute": profile.mute,
+        "first_name": user.first_name or None,
+        "last_name": user.last_name or None,
+        "profile_image_url": profile.profile_image.url
+        if profile.profile_image
+        else None,
+    }
+    res = {k: v for k, v in res.items() if v is not None}
+    return res

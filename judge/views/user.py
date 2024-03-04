@@ -430,7 +430,6 @@ def edit_profile(request):
             "form": form,
             "title": _("Edit profile"),
             "profile": profile,
-            "has_math_config": bool(settings.MATHOID_URL),
             "TIMEZONE_MAP": tzmap or "http://momentjs.com/static/img/world.png",
             "TIMEZONE_BG": settings.TIMEZONE_BG if tzmap else "#4E7CAD",
         },
@@ -457,14 +456,13 @@ class UserList(QueryStringSortMixin, InfinitePaginationMixin, TitleMixin, ListVi
         queryset = (
             Profile.objects.filter(is_unlisted=False)
             .order_by(self.order, "id")
-            .select_related("user")
             .only(
                 "display_rank",
-                "user__username",
                 "points",
                 "rating",
                 "performance_points",
                 "problem_count",
+                "about",
             )
         )
         if self.request.organization:
@@ -472,11 +470,11 @@ class UserList(QueryStringSortMixin, InfinitePaginationMixin, TitleMixin, ListVi
         if (self.request.GET.get("friend") == "true") and self.request.profile:
             queryset = self.filter_friend_queryset(queryset)
             self.filter_friend = True
-
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super(UserList, self).get_context_data(**kwargs)
+        Profile.prefetch_profile_cache([u.id for u in context["users"]])
         context["users"] = ranker(
             context["users"], rank=self.paginate_by * (context["page_obj"].number - 1)
         )

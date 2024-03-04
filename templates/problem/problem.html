@@ -65,13 +65,15 @@
         e.preventDefault();
         if (!$('#raw_problem').attr('src')) {
           $('#raw_problem').attr('src', '{{problem.code}}/raw')
+          $('#raw_problem').on('load', function() {
+            renderKatex(frames['raw_problem'].document);
+            frames['raw_problem'].print();
+          });
         }
-        // while(!$('.math-loaded', frames['raw_problem'].document).length){
-        //   await new Promise(r => setTimeout(r, 200));
-        // }
-        setTimeout(() => {
+        else {
           frames['raw_problem'].print();
-        }, 1000);
+          return;
+        }
       });
       $('#clarification_header').on('click', function() {
         $('#clarification_header_container').hide();
@@ -224,6 +226,36 @@
   </div>
 {% endif %}
 
+{% if problem.language_time_limit or problem.language_memory_limit %}
+  <hr style="padding-top: 0.3em">
+{% endif %}
+{% if problem.language_time_limit %}
+  <div class="problem-info-entry">
+    <i class="fa fa-clock-o fa-fw"></i><span class="pi-name">{{ _('Time limit:') }}</span>
+  </div>
+  <div class="problem-lang-limits">
+    {% for name, limit in problem.language_time_limit %}
+      <div class="lang-limit">
+        <span class="lang-name">{{ name }}</span>
+        <span class="lang-tl">{{ limit }}s</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% if problem.language_memory_limit %}
+  <div class="problem-info-entry">
+    <i class="fa fa-server fa-fw"></i><span class="pi-name">{{ _('Memory limit:') }}</span>
+  </div>
+  <div class="problem-lang-limits">
+    {% for name, limit in problem.language_memory_limit %}
+      <div class="lang-limit">
+        <span class="lang-name">{{ name }}</span>
+        <span class="lang-ml">{{ limit|kbsimpleformat }}</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif%}
+
 <hr style="padding-top: 0.7em">
 
 {% cache 86400 'problem_authors' problem.id LANGUAGE_CODE %}
@@ -350,7 +382,7 @@
     </span>
   </div>
 
-  {% cache 86400 'problem_html' problem.id MATH_ENGINE LANGUAGE_CODE %}
+  {% cache 86400 'problem_html' problem.id LANGUAGE_CODE %}
     {{ description|markdown(lazy_load=True)|reference|str|safe }}
   {% endcache %}
 
